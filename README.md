@@ -37,6 +37,9 @@ The full process contract lives in [METHODOLOGY.md](METHODOLOGY.md): 8 operating
 principles, 7 gated phases (Frame → Foundation → Baseline → Retrieval → Generation →
 Agentic → Operate), an 8-mode failure taxonomy, and the anti-patterns each phase exists to
 prevent. [CHECKLIST.md](CHECKLIST.md) is the one-page version for active use.
+Retrofitting an **existing** RAG system instead of starting fresh? Start with
+[ADOPTION.md](ADOPTION.md) — the phases run in reverse (document backward, wrap, baseline
+the incumbent, ratchet gates) via an L0→L3 adoption ladder.
 
 ## Status — honest scope (v0.1)
 
@@ -144,6 +147,7 @@ Swap stacks by changing that file. The commands — and therefore the process �
 
 ```
 METHODOLOGY.md            the process contract (read this first)
+ADOPTION.md               brownfield retrofit guide (existing systems, L0-L3 ladder, Azure JSON)
 CHECKLIST.md              one-page working checklist
 src/rag_method/
   cli.py  workflow.py     the encoded process (commands, sequence, state, ledger)
