@@ -1,0 +1,30 @@
+# gates.yaml — declarative promotion gates. (Phase 1 artifact; mirror decisions in D7)
+#
+# severity: hard_block -> a failure vetoes the experiment/promotion (auto-revert)
+#           advisory   -> a failure warns and passes
+#
+# IMPORTANT: a gate on a metric your pipeline doesn't produce FAILS LOUDLY (by
+# design — you can't pass a gate you don't measure). Gates are therefore staged
+# by phase: enable each block when the phase that produces its metrics arrives.
+# Thresholds are set BEFORE the first build, from requirements — not from
+# whatever the first run scored.
+
+metrics:
+  # --- Phases 2-3 (retrieval-only; active from day one) ---
+  "ndcg@10":           {threshold: 0.50, severity: hard_block}
+  "recall@10":         {threshold: 0.80, severity: hard_block}
+  "precision@10":      {threshold: 0.30, severity: advisory}
+
+  # --- Phase 4 (enable once pipeline.py defines generate()) ---
+  # groundedness:        {threshold: 0.95, severity: hard_block}
+  # citation_accuracy:   {threshold: 0.90, severity: hard_block}
+  # refusal_correct:     {threshold: 0.95, severity: hard_block}
+  # completeness:        {threshold: 0.85, severity: advisory}
+  # recency:             {threshold: 0.80, severity: advisory}
+
+# Regression gates compare a candidate run against the recorded baseline run.
+regression:
+  "ndcg@10":           {max_drop: 0.02, severity: hard_block}
+  # --- Phase 4 ---
+  # groundedness:        {max_drop: 0.00, severity: hard_block}
+  # citation_accuracy:   {max_drop: 0.02, severity: hard_block}

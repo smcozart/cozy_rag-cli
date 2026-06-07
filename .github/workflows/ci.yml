@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Test
+        run: uv run --extra dev pytest tests/ -q
+      - name: Lint
+        run: uv run --extra dev ruff check src tests
+      - name: Scaffold smoke (bash)
+        if: runner.os == 'Linux'
+        run: |
+          bash scripts/new-project.sh /tmp/scaffold-ci ci-demo
+          test -f /tmp/scaffold-ci/rag-spec.yaml
+          test -f /tmp/scaffold-ci/pipeline.py
+          grep -q ci-demo /tmp/scaffold-ci/rag-spec.yaml

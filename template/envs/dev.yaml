@@ -1,0 +1,13 @@
+# Environment binding: dev. Spec stays identical across envs; only bindings differ.
+env: dev
+backend: reference            # reference | azure_search | opaque (Claude/managed)
+# azure_search:
+#   endpoint: https://<service>-dev.search.windows.net
+#   index_base_name: <project>
+#   api_surface: preview      # preview | ga — lint preview-only features against this
+# opaque:
+#   model: claude-opus-4-8
+#   corpus_snapshot: <id>
+promotion:
+  to: staging
+  approval: auto_on_green     # dev -> staging promotes automatically when gates pass

@@ -1,0 +1,7 @@
+# Environment binding: prod. Dedicated service/identity; manual promotion only.
+env: prod
+backend: reference
+promotion:
+  from: staging
+  approval: manual            # requires reviewed promotion report; rollback target recorded
+  rollback_retention: 48h     # keep the previous version as a swap target

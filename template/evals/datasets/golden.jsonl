@@ -1,0 +1,2 @@
+{"id": "g-001", "question": "REPLACE: a realistic question a user would actually ask, in their own words", "reference_answer": "REPLACE: the reference answer", "relevant_doc_ids": ["REPLACE-doc-id"], "tags": ["topic:example"], "must_refuse": false}
+{"id": "g-002", "question": "REPLACE: hand-curate 50-200 of these; bootstrap with the synthetic prompt in METHODOLOGY.md Phase 1, then human-review every generated item", "reference_answer": "REPLACE", "relevant_doc_ids": ["REPLACE-doc-id"], "tags": ["topic:example"], "must_refuse": false}

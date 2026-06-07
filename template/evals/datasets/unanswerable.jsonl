@@ -1,0 +1,2 @@
+{"id": "u-001", "question": "REPLACE: plausible-sounding question with NO answer in the corpus — correct behavior is refusal", "reference_answer": "The system must refuse.", "relevant_doc_ids": [], "tags": ["behavior:refusal"], "must_refuse": true}
+{"id": "u-002", "question": "REPLACE: out-of-domain question adjacent to the corpus topic — the most tempting hallucination target", "reference_answer": "The system must refuse.", "relevant_doc_ids": [], "tags": ["behavior:refusal"], "must_refuse": true}

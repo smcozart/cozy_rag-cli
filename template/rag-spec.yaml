@@ -1,0 +1,52 @@
+# rag-spec.yaml — every quality-affecting setting, versioned. (Phase 1 artifact)
+#
+# Rule: schema is code; deployment binds to environment (envs/*.yaml).
+# Pin: if `chunking` changes, the eval baseline is void — re-run the full suite.
+# Anything not in this file cannot affect quality. If it can, move it in here.
+
+name: <project>
+spec_version: 1
+
+corpus:
+  # For the reference backend this is a JSONL file; for Azure it's a data source;
+  # for an MCP/Claude setup it's the corpus snapshot id.
+  corpus_path: data/corpus.jsonl
+
+chunking:
+  # token_split | sentence | layout_aware | semantic | contextual
+  strategy: layout_aware
+  max_tokens: 512
+  overlap_tokens: 64
+  # contextual only: prepend an LLM-generated "how this chunk fits the document" summary
+  contextual_prefix: false
+
+embedding:
+  # Chosen via MTEB retrieval leaderboard for your task + language — never vendor claims.
+  model: text-embedding-3-small
+  dimensions: 1536
+  normalize: true   # keep true: with normalized vectors, cosine similarity == dot product
+
+retrieval:
+  mode: hybrid          # sparse | dense | hybrid
+  candidates_per_arm: 50  # over-fetch before fusion
+  fusion: rrf
+  rrf_k: 60
+  rerank:
+    enabled: true
+    model: <reranker>
+    rerank_top: 50
+    final_top: 10
+
+generation:
+  temperature: 0
+  citation_enforcement: true   # uncited claims stripped; citations must resolve to retrieved chunks
+  refusal_on_insufficient_grounding: true
+  context_mode: just_in_time   # just_in_time (refs + fetch tool) | eager (full chunks)
+
+# Named quality/cost/latency profiles (Phase 3 output). Each overrides the base above.
+profiles:
+  dev-fast:
+    retrieval: {mode: dense, candidates_per_arm: 10, rerank: {enabled: false}}
+  prod-quality: {}   # the base config IS prod-quality
+  prod-budget:
+    retrieval: {candidates_per_arm: 25, rerank: {rerank_top: 25}}
