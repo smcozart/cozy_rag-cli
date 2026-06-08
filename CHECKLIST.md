@@ -47,8 +47,9 @@ feels arbitrary, go read its "why" there before skipping it.
 - [ ] Agentic evals added (plan quality, source selection, re-query rate); latency budget held
 
 ## Phase 6 — Operate  ▢ gate: loop is live
-- [ ] Promotion: `rag-method promote --to staging` (auto on green); `--to prod --approve`
-      (manual + written report in evals/promotions/)
+- [ ] Promotion: `rag-method promote --to staging` (auto on green); prod is two-step —
+      `--to prod` builds candidate + report, then a human runs `--approve <candidate_id>`
+      (always; protected envs ignore auto_on_green)
 - [ ] Reversion REHEARSED once (`rag-method rollback`, then re-promote)
 - [ ] Per-query logging: subqueries, chunks + stage scores, final context, citations, latency, cost, config version
 - [ ] Scheduled regression replay + drift alerts

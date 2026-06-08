@@ -1,7 +1,20 @@
-# Environment binding: prod. Dedicated service/identity; manual promotion only.
+# Environment binding: prod. Dedicated service/identity. HUMAN APPROVAL ALWAYS REQUIRED.
+#
+# Environments named prod/production/prd/live — or any env with `protected: true` —
+# can NEVER be promoted to by automation alone: `approval: auto_on_green` is ignored
+# on protected envs. Promotion is two-step, and approval is bound to the specific
+# candidate version reviewed:
+#
+#   1. rag-method promote --to prod
+#        -> builds the candidate (serving untouched), runs the suite, writes the
+#           report to evals/promotions/, returns PENDING APPROVAL + candidate id
+#   2. (human reviews the report)
+#   3. rag-method promote --to prod --approve <candidate_version>
+#        -> ships ONLY if the hash still matches what was reviewed
 env: prod
 backend: reference
+protected: true             # redundant for the name "prod" — explicit for clarity
 promotion:
   from: staging
-  approval: manual            # requires reviewed promotion report; rollback target recorded
-  rollback_retention: 48h     # keep the previous version as a swap target
+  approval: manual
+  rollback_retention: 48h   # keep the previous version as a swap target

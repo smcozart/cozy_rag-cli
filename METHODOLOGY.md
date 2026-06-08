@@ -406,6 +406,11 @@ machinery rather than by users.
   dev→staging automatic on green; staging→prod requires human approval of a generated
   **promotion report** (eval summary vs baseline, gate results, config diff, rollback target) —
   the audit trail (D10).
+- **Production approval is a guarantee, not a setting.** No automation path may promote to a
+  production environment: auto-on-green configuration is ignored for protected envs, and the
+  approval token is the specific candidate version hash from the reviewed report — approving
+  "whatever is current" is structurally impossible, and a spec change after review voids the
+  approval.
 - **Atomic cutover via alias/pointer swap:** build the new index under a versioned name, validate,
   then atomically repoint the serving alias. Zero downtime regardless of reindex duration;
   rollback is the reverse swap, in seconds. Keep the previous index as the rollback target for a

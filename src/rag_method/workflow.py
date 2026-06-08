@@ -281,21 +281,49 @@ def do_rollback(project: Project) -> dict[str, Any]:
     return {"from": abandoned, "to": target}
 
 
-def do_promote(project: Project, to_env: str, approve: bool = False, k: int = 10) -> dict[str, Any]:
-    """Eval-gated promotion with a written report; manual envs require approve=True.
+PROTECTED_ENV_NAMES = frozenset({"prod", "production", "prd", "live"})
 
-    Applies the CURRENT spec to the target env's backend, runs the full suite
-    there, gates against the target's baseline (if any), writes the promotion
-    report, and only then keeps the swap. A hard-block failure reverts the
-    target to its previous version.
+
+def _human_approval_required(env_name: str, env_config: dict[str, Any]) -> tuple[bool, bool]:
+    """Returns (requires_human_approval, auto_policy_overridden).
+
+    Production is never promoted to by automation alone. Environments named
+    like production — or marked `protected: true` — ALWAYS require explicit
+    human approval; a `promotion.approval: auto_on_green` setting on such an
+    environment is ignored (and surfaced in the report), not honored.
+    Automation may build the candidate and run the gates; only a human ships.
+    """
+    is_protected = env_name.lower() in PROTECTED_ENV_NAMES or bool(env_config.get("protected"))
+    auto = str(env_config.get("promotion", {}).get("approval", "manual")) == "auto_on_green"
+    if is_protected:
+        return True, auto
+    return not auto, False
+
+
+def do_promote(
+    project: Project, to_env: str, approve: str | None = None, k: int = 10
+) -> dict[str, Any]:
+    """Eval-gated promotion. Human approval is bound to a SPECIFIC candidate.
+
+    For environments requiring approval (all protected/production envs, plus
+    any env with `promotion.approval: manual`), promotion is two-step:
+
+      1. ``promote --to prod`` — builds the candidate (a new versioned
+         index/resource; serving is untouched or reverted), runs the full
+         suite, writes the promotion report, returns PENDING APPROVAL with
+         the candidate version id.
+      2. A human reviews ``evals/promotions/<...>.md``, then runs
+         ``promote --to prod --approve <candidate_version>``.
+
+    The approval token IS the candidate version hash: you can only approve
+    the exact configuration you reviewed. If the spec changed since review,
+    the hash changed, the approval is void, and a fresh report is produced.
+    There is no flag that promotes "whatever is current" to production.
+
+    A hard-block gate failure always blocks and reverts, approval or not.
     """
     target = load_project(project.root, to_env)
-    approval_mode = str(target.env.get("promotion", {}).get("approval", "manual"))
-    if approval_mode == "manual" and not approve:
-        raise WorkflowError(
-            f"promotion to '{to_env}' requires explicit approval — re-run with --approve "
-            "after reviewing the latest run and gate report"
-        )
+    requires_approval, policy_overridden = _human_approval_required(to_env, target.env)
 
     state = _load_state(project)
     target_state = _env_state(state, to_env)
@@ -310,19 +338,51 @@ def do_promote(project: Project, to_env: str, approve: bool = False, k: int = 10
     run_path = save_run(run, project.runs_dir)
     report = evaluate_gates(project.gates, run, baseline=target_baseline)
 
-    if report["passed"]:
+    approval_satisfied = (not requires_approval) or (approve == candidate_version)
+    approval_mismatch = (
+        requires_approval and approve is not None and approve != candidate_version
+    )
+    promoted = report["passed"] and approval_satisfied
+
+    if promoted:
         if candidate_version not in target_state["history"]:
             target_state["history"].append(candidate_version)
         target_state["baseline_run"] = str(run_path.relative_to(project.root))
     elif previous_target_version is not None:
+        # Not shipping: serving goes back to the incumbent, candidate kept on
+        # disk under its versioned name for review/approval.
         backend.swap(previous_target_version)
     _save_state(project, state)
 
+    if promoted:
+        status = "PROMOTED"
+    elif not report["passed"]:
+        status = "BLOCKED (gates)"
+    else:
+        status = "PENDING APPROVAL"
+    next_step = (
+        f"rag-method promote --to {to_env} --approve {candidate_version}"
+        if status == "PENDING APPROVAL"
+        else None
+    )
+
     report_path = _write_promotion_report(
-        project, to_env, run, report, previous_target_version, candidate_version
+        project,
+        to_env,
+        run,
+        report,
+        previous_target_version,
+        candidate_version,
+        status=status,
+        next_step=next_step,
+        policy_overridden=policy_overridden,
     )
     return {
-        "promoted": report["passed"],
+        "promoted": promoted,
+        "status": status,
+        "pending_approval": status == "PENDING APPROVAL",
+        "approval_mismatch": approval_mismatch,
+        "approval_policy_overridden": policy_overridden,
         "candidate_version": candidate_version,
         "rollback_target": previous_target_version,
         "report": report,
@@ -338,6 +398,9 @@ def _write_promotion_report(
     report: dict[str, Any],
     previous_version: str | None,
     candidate_version: str,
+    status: str,
+    next_step: str | None = None,
+    policy_overridden: bool = False,
 ) -> Path:
     promotions_dir = project.root / "evals" / "promotions"
     promotions_dir.mkdir(parents=True, exist_ok=True)
@@ -347,10 +410,17 @@ def _write_promotion_report(
     lines = [
         f"# Promotion Report: {project.env_name} -> {to_env}",
         "",
-        f"- Result: {'PROMOTED' if report['passed'] else 'BLOCKED (target reverted)'}",
+        f"- Result: {status}",
         f"- Candidate version: `{candidate_version}`",
         f"- Rollback target: `{previous_version or 'none (first deployment)'}`",
         f"- Run: `{run['run_id']}` on `{run['dataset']}` (k={run['k']})",
+    ]
+    if policy_overridden:
+        lines.append(
+            "- NOTE: `promotion.approval: auto_on_green` is IGNORED for protected "
+            "environments — production promotion always requires a human."
+        )
+    lines += [
         "",
         "## Gate checks",
         "",
@@ -368,6 +438,18 @@ def _write_promotion_report(
         )
     lines += ["", "## Aggregate", ""]
     lines += [f"- {name}: {value}" for name, value in sorted(run["aggregate"].items())]
+    if next_step:
+        lines += [
+            "",
+            "## To approve",
+            "",
+            "Review the gate checks above, then run:",
+            "",
+            f"    {next_step}",
+            "",
+            f"The approval is bound to candidate `{candidate_version}` — if the spec "
+            "changes, the hash changes and a fresh review is required.",
+        ]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 

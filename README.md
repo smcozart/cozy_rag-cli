@@ -26,7 +26,12 @@ differently. This kit encodes the alternative:
   and it writes the ledger row whether the change is kept or reverted — the log cannot
   drift from reality.
 - **Promotion is gated by measured quality, not opinion.** Hard-block gates veto and
-  auto-revert; advisory gates warn. Prod requires explicit approval of a written report.
+  auto-revert; advisory gates warn.
+- **Production ALWAYS has a human in the loop — as a guarantee, not a setting.** Envs
+  named `prod`/`production`/`prd`/`live` (or marked `protected: true`) ignore
+  `auto_on_green`. Approval is bound to the specific candidate version hash from the
+  reviewed promotion report — if the spec changed since review, the hash changed and the
+  approval is void. There is no flag that ships "whatever is current" to production.
 - **Reversion is an architectural property, not a feature.** Configs are immutable
   content-hashed versions; serving is a pointer; rollback is one swap.
 
@@ -98,7 +103,8 @@ Then work the phases:
 
    ```bash
    rag-method promote --to staging              # auto on green
-   rag-method promote --to prod --approve       # manual; report in evals/promotions/
+   rag-method promote --to prod                 # builds + validates candidate; PENDING APPROVAL + report
+   rag-method promote --to prod --approve <id>  # human ships THAT reviewed candidate, and only that one
    rag-method rollback                          # seconds, reversible
    ```
 

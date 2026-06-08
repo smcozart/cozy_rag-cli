@@ -47,7 +47,13 @@ def main(argv: list[str] | None = None) -> int:
     exp.add_argument("description", help="the ONE variable you changed, e.g. 'chunking: layout->contextual'")
     promote = sub.add_parser("promote", help="eval-gated promotion to another env")
     promote.add_argument("--to", required=True, help="target env, e.g. staging or prod")
-    promote.add_argument("--approve", action="store_true", help="explicit approval for manual envs")
+    promote.add_argument(
+        "--approve",
+        metavar="VERSION",
+        default=None,
+        help="explicit human approval, bound to the candidate version id from the "
+        "promotion report (production envs ALWAYS require this; never automated)",
+    )
     sub.add_parser("rollback", help="repoint serving to the previous kept version")
 
     args = parser.parse_args(argv)
@@ -93,10 +99,20 @@ def main(argv: list[str] | None = None) -> int:
             print("EXPERIMENTS.md row appended")
         elif args.command == "promote":
             result = do_promote(project, args.to, approve=args.approve, k=args.k)
-            verdict = "PROMOTED" if result["promoted"] else "BLOCKED (target reverted)"
-            print(f"{verdict}: {result['candidate_version']} -> {args.to} "
+            print(f"{result['status']}: candidate {result['candidate_version']} -> {args.to} "
                   f"(rollback target: {result['rollback_target']})")
+            if result["approval_policy_overridden"]:
+                print("  note: auto_on_green is IGNORED for protected environments — "
+                      "production promotion always requires a human")
+            if result["approval_mismatch"]:
+                print("  approval did not match the candidate — the spec changed since "
+                      "review; re-review the new report before approving")
             _print_gate_report(result["report"])
+            if result["pending_approval"]:
+                print("  candidate built and validated; serving unchanged. Review the "
+                      "report, then approve THAT candidate:")
+                print(f"    rag-method promote --to {args.to} "
+                      f"--approve {result['candidate_version']}")
             print(f"report: {result['report_path']}")
         elif args.command == "rollback":
             result = do_rollback(project)

@@ -132,15 +132,23 @@ def test_encoded_process(project_root: Path) -> None:
     ledger = (project_root / "EXPERIMENTS.md").read_text(encoding="utf-8")
     assert "KEPT" in ledger and "REVERTED" in ledger
 
-    # restore sane gates; promotion to prod requires explicit approval
+    # restore sane gates; promotion to prod is two-step: candidate -> human approval
     gates["metrics"]["groundedness"]["threshold"] = 0.9
     (project_root / "gates.yaml").write_text(yaml.safe_dump(gates), encoding="utf-8")
     _set_spec(project_root, chunking="contextual")
     project = load_project(project_root, "dev")
-    with pytest.raises(WorkflowError, match="requires explicit approval"):
-        do_promote(project, "prod", approve=False)
 
-    promotion = do_promote(project, "prod", approve=True)
+    pending = do_promote(project, "prod")
+    assert pending["pending_approval"] and not pending["promoted"]
+    candidate = pending["candidate_version"]
+    pending_report = Path(pending["report_path"]).read_text(encoding="utf-8")
+    assert "PENDING APPROVAL" in pending_report and candidate in pending_report
+
+    # a wrong/stale token never ships
+    mismatch = do_promote(project, "prod", approve="deadbeef0000")
+    assert mismatch["approval_mismatch"] and not mismatch["promoted"]
+
+    promotion = do_promote(project, "prod", approve=candidate)
     assert promotion["promoted"]
     assert Path(promotion["report_path"]).exists()
     report_text = Path(promotion["report_path"]).read_text(encoding="utf-8")
@@ -159,3 +167,20 @@ def test_encoded_process(project_root: Path) -> None:
     assert rolled["to"] == kept_version
     backend = project.pipeline.build_backend(project.env)
     assert backend.version() == kept_version
+
+
+def test_protected_env_ignores_auto_policy(project_root: Path) -> None:
+    """A prod-named env with auto_on_green STILL requires human approval —
+    the human-in-the-loop is a guarantee, not a setting."""
+    (project_root / "envs" / "prod.yaml").write_text(
+        yaml.safe_dump({"env": "prod", "backend": "reference",
+                        "promotion": {"approval": "auto_on_green"}}), encoding="utf-8")
+    project = load_project(project_root, "dev")
+    do_baseline(project)
+
+    result = do_promote(project, "prod")
+    assert result["pending_approval"] and not result["promoted"]
+    assert result["approval_policy_overridden"]
+
+    approved = do_promote(project, "prod", approve=result["candidate_version"])
+    assert approved["promoted"]
