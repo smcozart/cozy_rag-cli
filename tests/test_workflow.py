@@ -154,6 +154,14 @@ def test_encoded_process(project_root: Path) -> None:
     report_text = Path(promotion["report_path"]).read_text(encoding="utf-8")
     assert "PROMOTED" in report_text and "Rollback target" in report_text
 
+    # The promotion is also recorded in the durable ledger (not only the report):
+    # the highest-stakes decision must not be the one decision missing from it.
+    # PENDING APPROVAL and the wrong-token attempt above left no row.
+    ledger = (project_root / "EXPERIMENTS.md").read_text(encoding="utf-8")
+    promote_rows = [line for line in ledger.splitlines() if "PROMOTE -> prod" in line]
+    assert len(promote_rows) == 1
+    assert "PROMOTED" in promote_rows[0] and candidate in promote_rows[0]
+
     # status reflects both envs
     status = do_status(project)
     assert "dev" in status["envs"] and "prod" in status["envs"]
@@ -184,3 +192,25 @@ def test_protected_env_ignores_auto_policy(project_root: Path) -> None:
 
     approved = do_promote(project, "prod", approve=result["candidate_version"])
     assert approved["promoted"]
+
+
+def test_gate_blocked_promotion_is_logged(project_root: Path) -> None:
+    """A promotion vetoed by a hard gate is the promote-path analog of a
+    REVERTED experiment, so it lands in the durable ledger too — while a
+    PENDING APPROVAL (serving untouched) does not."""
+    project = load_project(project_root, "dev")
+    do_baseline(project)
+
+    gates = yaml.safe_load((project_root / "gates.yaml").read_text(encoding="utf-8"))
+    gates["metrics"]["groundedness"]["threshold"] = 1.1  # impossible
+    (project_root / "gates.yaml").write_text(yaml.safe_dump(gates), encoding="utf-8")
+    project = load_project(project_root, "dev")
+
+    result = do_promote(project, "prod")
+    assert not result["promoted"]
+    assert result["status"] == "BLOCKED (gates)"
+
+    ledger = (project_root / "EXPERIMENTS.md").read_text(encoding="utf-8")
+    blocked_rows = [line for line in ledger.splitlines() if "PROMOTE -> prod" in line]
+    assert len(blocked_rows) == 1
+    assert "BLOCKED" in blocked_rows[0] and "groundedness" in blocked_rows[0]

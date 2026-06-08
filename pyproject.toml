@@ -1,6 +1,6 @@
 [project]
 name = "rag-method"
-version = "0.1.1"
+version = "0.1.2"
 description = "Stack-agnostic harness for the RAG Development Methodology: backend contract, eval runner, gates, diff."
 requires-python = ">=3.11"
 dependencies = [

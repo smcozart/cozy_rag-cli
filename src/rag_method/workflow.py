@@ -366,6 +366,37 @@ def do_promote(
         else None
     )
 
+    # A promotion is a decision, so it belongs in the EXPERIMENTS.md ledger
+    # alongside baseline/experiment/rollback — not only in the promotions report
+    # (which is a per-invocation artifact, not part of the durable decision log).
+    # Two outcomes change or veto serving and are logged; PENDING APPROVAL is a
+    # proposal with serving untouched (the report is its artifact), and a
+    # wrong-token attempt is a refused attempt — neither is a decision.
+    if status in ("PROMOTED", "BLOCKED (gates)"):
+        aggregate = run["aggregate"]
+        metric_summary = "; ".join(
+            f"{name}={aggregate[name]}"
+            for name in _gate_metric_names(project.gates)
+            if name in aggregate
+        )
+        versions = f"{previous_target_version or 'none'} -> {candidate_version}"
+        if status == "PROMOTED":
+            why = f"approved {approve}" if requires_approval else "auto on green"
+            verdict = "PROMOTED"
+        else:
+            failures = "; ".join(
+                f"{check['metric']} {check.get('actual')}<"
+                f"{check.get('threshold', check.get('max_drop'))}"
+                for check in report["hard_block_failures"]
+            )
+            why = f"hard block: {failures}"
+            verdict = "BLOCKED"
+        _append_experiment_row(
+            project,
+            [_today(), f"PROMOTE -> {to_env}", versions,
+             metric_summary or "n/a", verdict, why],
+        )
+
     report_path = _write_promotion_report(
         project,
         to_env,
