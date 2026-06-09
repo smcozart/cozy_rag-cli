@@ -168,9 +168,50 @@ alone produces a new config version — which is what makes `experiment` correct
    requires the rebuild-and-swap path. When in doubt, rebuild — versioned indexes make
    rebuild the safe default.)
 
+### Azure numbers the gates and costs actually depend on (doc-grounded)
+
+The specifics below change how you set `k`, read the gates, and budget `experiment`.
+Each is verified against current Microsoft Learn docs.
+
+- **Per-stage scores you actually get back.** Azure returns two scores per match:
+  `@search.score` (L1 — BM25 for text, HNSW for vector, **fused RRF** for hybrid) and
+  `@search.rerankerScore` (L2 semantic, range **0.00–4.00**) → map to `stage_scores["l1"]`
+  / `["l2"]`. **Caveat:** in a *hybrid* query `@search.score` is the fused RRF value;
+  Azure does **not** return per-arm BM25-vs-vector sub-scores per document in a standard
+  response (only the preview query-debug option exposes them). So the "found-then-demoted
+  vs never-found" stage diagnosis is **partially degraded on hybrid** — the gates still
+  hold, the diagnostics are thinner than on a fully-visible custom backend.
+  ([scores](https://learn.microsoft.com/azure/search/search-relevance-overview#types-of-search-scores))
+
+- **The semantic ranker only sees the top 50, and bills per use.** L2 reranks at most the
+  top 50 L1 results. Set eval `k` (and the spec's `candidates_per_arm`) so that
+  `k + maxTextRecallSize ≥ 50` (2024-05-01-preview+) — otherwise the rerank gate measures a
+  starved candidate set. Semantic ranking is a premium, usage-billed feature, so a large
+  golden+adversarial suite under `experiment` has a per-run cost.
+  ([hybrid query](https://learn.microsoft.com/azure/search/hybrid-search-how-to-query#configure-a-query-response),
+  [semantic ranking](https://learn.microsoft.com/azure/search/semantic-search-overview))
+
+- **Alias swap is fast but not instant.** A swap propagates in **up to 10 seconds**, and
+  Azure refuses to delete an index an alias still points at (400). So `swap()` should
+  verify-then-proceed, and version GC must keep the previous index for a ≥10s grace window
+  (a rollback-retention of 48h, per the prod env binding, already covers this).
+  ([aliases](https://learn.microsoft.com/azure/search/search-how-to-alias#update-an-alias))
+
+- **`apply()` cost is real, and a few knobs over-rebuild.** A new index version = a full
+  re-index (indexer run + embedding API calls = minutes + money), unlike the free local
+  backend — "change one variable → mint a version" is cheap locally but not here; use
+  skillset/enrichment caching in dev. The kit already fast-paths *query-time* knobs (they
+  live in the YAML layer → no reindex). The remaining gap: **scoring profiles, synonym
+  maps, and semantic-config definitions live in `index.json` yet are in-place-updatable on
+  Azure without a rebuild** — a naive `apply()` that rebuilds on any `index.json` hash
+  change over-rebuilds for exactly these. A production Azure `apply()` should PATCH them in
+  place; the content-hash version identity stays correct either way.
+  ([update vs rebuild](https://learn.microsoft.com/azure/search/search-howto-reindex#update-an-index-schema))
+
 The full-featured Azure implementation of all of the above (linting, migration diffs,
 activity-log replay) is the **cozy_RAG** project; this kit's `AzureSearchBackend` stub
-documents the mapping and delegates there.
+documents the mapping and delegates there. REST payload shapes per op belong with that
+implementation, not here.
 
 ---
 
